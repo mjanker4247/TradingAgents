@@ -137,6 +137,47 @@ def select_research_depth() -> int:
 
     return choice
 
+def _fetch_ionos_models() -> List[Tuple[str, str]]:
+    """Fetch available models from the IONOS Model Hub API."""
+    import requests
+    try:
+        header = {
+            "Authorization": f"Bearer {os.environ.get('IONOS_API_KEY')}", 
+            "Content-Type": "application/json"
+        }
+        resp = requests.get("https://openai.inference.de-txl.ionos.com/v1/models", timeout=10, headers=header)
+        resp.raise_for_status()
+        models = resp.json().get("data", [])
+        return [(m["id"], m["id"]) for m in models]
+    except Exception as e:
+        console.print(f"\n[yellow]Could not fetch IONOS models: {e}[/yellow]")
+        return []
+
+def select_ionos_model() -> str:
+    """Select an IONOS model, or enter a custom ID."""
+    models = _fetch_ionos_models()
+
+    choices = [questionary.Choice(name, value=mid) for name, mid in models]
+    choices.append(questionary.Choice("Custom model ID", value="custom"))
+
+    choice = questionary.select(
+        "Select IONOS Model (latest available):",
+        choices=choices,
+        instruction="\n- Use arrow keys to navigate\n- Press Enter to select",
+        style=questionary.Style([
+            ("selected", "fg:magenta noinherit"),
+            ("highlighted", "fg:magenta noinherit"),
+            ("pointer", "fg:magenta noinherit"),
+        ]),
+    ).ask()
+
+    if choice is None or choice == "custom":
+        return questionary.text(
+            "Enter IONOS model ID (e.g. Qwen/Qwen3-Coder-Next):",
+            validate=lambda x: len(x.strip()) > 0 or "Please enter a model ID.",
+        ).ask().strip()
+
+    return choice
 
 def _fetch_openrouter_models() -> List[Tuple[str, str]]:
     """Fetch available models from the OpenRouter API."""
@@ -190,6 +231,9 @@ def _select_model(provider: str, mode: str) -> str:
     """Select a model for the given provider and mode (quick/deep)."""
     if provider.lower() == "openrouter":
         return select_openrouter_model()
+    
+    if provider.lower() == "ionos":
+        return select_ionos_model()
 
     if provider.lower() == "azure":
         return questionary.text(
@@ -251,6 +295,7 @@ def select_llm_provider() -> tuple[str, str | None]:
         ("OpenRouter", "openrouter", "https://openrouter.ai/api/v1"),
         ("Azure OpenAI", "azure", None),
         ("Ollama", "ollama", ollama_url),
+        ("IONOS", "ionos", "https://openai.inference.de-txl.ionos.com/v1"),
     ]
 
     choice = questionary.select(

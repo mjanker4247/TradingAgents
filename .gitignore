@@ -217,3 +217,9 @@ __marimo__/
 
 # Cache
 **/data_cache/
+
+# Local configuration file
+uv.lock
+IONOS-models.json
+reports/
+.vscode/
