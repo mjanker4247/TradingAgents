@@ -152,6 +152,7 @@ _PROVIDER_BASE_URL = {
     "minimax-cn": "https://api.minimaxi.com/v1",
     "openrouter": "https://openrouter.ai/api/v1",
     "ollama":     "http://localhost:11434/v1",
+    "ionos":      "https://openai.inference.de-txl.ionos.com/v1/",
 }
 
 
@@ -172,12 +173,12 @@ def _resolve_provider_base_url(provider: str) -> Optional[str]:
 
 
 class OpenAIClient(BaseLLMClient):
-    """Client for OpenAI, Ollama, OpenRouter, and xAI providers.
+    """Client for OpenAI, Ollama, OpenRouter, IONOS, and xAI providers.
 
     For native OpenAI models, uses the Responses API (/v1/responses) which
     supports reasoning_effort with function tools across all model families
     (GPT-4.1, GPT-5). Third-party compatible providers (xAI, OpenRouter,
-    Ollama) use standard Chat Completions.
+    Ollama, IONOS) use standard Chat Completions.
     """
 
     def __init__(

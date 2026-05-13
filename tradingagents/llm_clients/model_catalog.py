@@ -154,6 +154,7 @@ MODEL_OPTIONS: ProviderModeOptions = {
     "minimax": _MINIMAX_MODELS,
     "minimax-cn": _MINIMAX_MODELS,
     # OpenRouter: fetched dynamically. Azure: any deployed model name.
+    # IONOS: fetched dynamically
     # Ollama display labels intentionally omit a "local" marker — the
     # endpoint is now configurable via OLLAMA_BASE_URL, so the same labels
     # apply whether the user runs ollama-serve on localhost or against a
@@ -174,7 +175,7 @@ MODEL_OPTIONS: ProviderModeOptions = {
             ("Qwen3:latest (8B)", "qwen3:latest"),
             ("Custom model ID", "custom"),
         ],
-    },
+    }
 }
 
 
