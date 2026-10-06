@@ -94,15 +94,19 @@ def test_the_state_log_names_each_field_as_the_state_does(tmp_path):
 
 
 @pytest.mark.unit
-def test_the_live_display_does_not_scroll_the_terminal():
-    """A layout taller than the window makes rich redraw by scrolling, which
-    reads as flicker; the alternate screen holds it in place (#784). The final
-    report prints after the live view ends, so nothing is lost when it closes."""
+def test_the_live_display_uses_textual_fullscreen():
+    """The live view runs as a Textual app (fullscreen), not Rich Live scrolling.
+
+    The final report still prints after the Textual app exits (#784).
+    """
     import inspect
 
-    import cli.main as m
+    import cli.run as cli_run
+    import cli.tui as tui
 
-    assert "screen=True" in inspect.getsource(m.run_analysis)
+    source = inspect.getsource(cli_run._launch_live_ui)
+    assert "run_analysis_app" in source
+    assert issubclass(tui.AnalysisApp, tui.App)
 
 
 class AnalystWallTimeTrackerTests(unittest.TestCase):

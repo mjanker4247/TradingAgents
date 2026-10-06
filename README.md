@@ -213,6 +213,17 @@ tradingagents --ticker NVDA --date 2026-09-23 --analysts market,news,fundamental
 ```
 Each flag skips only its own question. Run without a terminal, a missing answer stops the run before it starts and names the flag or variable to set.
 
+The live analysis view is a [Textual](https://textual.textualize.io) TUI (Rich still formats setup banners and the final report). To serve the same UI in a browser:
+
+```bash
+# LLM settings must come from the environment (same as an unattended CLI run)
+export TRADINGAGENTS_LLM_PROVIDER=openai TRADINGAGENTS_QUICK_THINK_LLM=gpt-6-luna TRADINGAGENTS_DEEP_THINK_LLM=gpt-6-sol
+export TRADINGAGENTS_OUTPUT_LANGUAGE=English TRADINGAGENTS_MAX_DEBATE_ROUNDS=1 TRADINGAGENTS_MAX_RISK_ROUNDS=1
+tradingagents serve --host localhost --port 8000
+```
+
+Open the printed URL. The browser form collects ticker, date, analysts and research depth; provider/model settings stay in the environment.
+
 A saved report also includes `complete_report.html`, the report as one page with its sections listed beside the text, for reading in a browser, on a phone or in print. Answering the save question at the prompt also asks about the page and can open it in your browser; `--no-html` skips it, and so does `ta.save_reports(state, "NVDA", html=False)` from Python.
 
 ### Markets and tickers

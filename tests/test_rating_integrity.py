@@ -149,18 +149,16 @@ def test_the_cli_says_when_a_run_produced_no_usable_rating(monkeypatch, tmp_path
     fake = _Graph()
     fake.graph = fake
     fake.propagator = fake
+    monkeypatch.setenv("TRADINGAGENTS_UI", "headless")
     monkeypatch.setattr(cli_run, "TradingAgentsGraph", lambda *a, **k: fake)
-    monkeypatch.setattr(cli_run, "create_layout", lambda: None)
-    monkeypatch.setattr(cli_run, "update_display", lambda *a, **k: None)
-    monkeypatch.setattr(cli_run, "Live", type("L", (), {"__init__": lambda s, *a, **k: None,
-                                                  "__enter__": lambda s: s,
-                                                  "__exit__": lambda s, *a: False}))
     monkeypatch.setattr(m.console, "print", lambda *a, **k: printed.append(" ".join(str(x) for x in a)))
     monkeypatch.setattr(cli_run, "display_complete_report", lambda *a, **k: None)
     monkeypatch.setattr(m.typer, "prompt", lambda *a, **k: "N")
     monkeypatch.setattr(cli_run, "get_user_selections", lambda flags=None: {
         "ticker": "NVDA", "analysis_date": "2026-01-10",
         "analysts": [AnalystType.MARKET], "asset_type": "stock",
+        "research_depth": 1, "llm_provider": "openai", "backend_url": "https://api.openai.com/v1",
+        "quick_think_llm": "q", "deep_think_llm": "d",
     })
     monkeypatch.setattr(cli_run, "_build_run_config", lambda s, c: {
         "data_cache_dir": str(tmp_path / "c"), "results_dir": str(tmp_path / "r")})

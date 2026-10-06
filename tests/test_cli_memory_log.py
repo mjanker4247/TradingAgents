@@ -80,17 +80,6 @@ class _FakeGraph:
         yield [], {"messages": [], "final_trade_decision": "Rating: Buy\n\nBuy NVDA.", "final_rating": "Buy"}
 
 
-class _NullLive:
-    def __init__(self, *a, **k):
-        pass
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *a):
-        return False
-
-
 class _FakeBuffer:
     def __init__(self):
         self.messages = []
@@ -122,14 +111,16 @@ def _run_cli(monkeypatch, tmp_path, fake):
     from cli.models import AnalystType
 
     buffer = _FakeBuffer()
+    monkeypatch.setenv("TRADINGAGENTS_UI", "headless")
     monkeypatch.setattr(cli_run, "TradingAgentsGraph", lambda *a, **k: fake)
     monkeypatch.setattr(cli_run, "message_buffer", buffer)
-    monkeypatch.setattr(cli_run, "create_layout", lambda: None)
-    monkeypatch.setattr(cli_run, "update_display", lambda *a, **k: None)
-    monkeypatch.setattr(cli_run, "Live", _NullLive)
+    monkeypatch.setattr("cli.analysis_driver.message_buffer", buffer)
+    monkeypatch.setattr("cli.display.message_buffer", buffer)
     monkeypatch.setattr(cli_run, "get_user_selections", lambda flags=None: {
         "ticker": "NVDA", "analysis_date": "2026-01-10",
         "analysts": [AnalystType.MARKET], "asset_type": "stock",
+        "research_depth": 1, "llm_provider": "openai", "backend_url": "https://api.openai.com/v1",
+        "quick_think_llm": "q", "deep_think_llm": "d",
     })
     monkeypatch.setattr(cli_run, "_build_run_config", lambda selections, checkpoint: {
         "data_cache_dir": str(tmp_path / "cache"), "results_dir": str(tmp_path / "results"),

@@ -100,6 +100,30 @@ def analyze(
         raise typer.Exit(code=1) from None
 
 
+@app.command("serve")
+def serve(
+    host: str = typer.Option("localhost", "--host", help="Bind address for the web UI"),
+    port: int = typer.Option(8000, "--port", help="Port for the web UI"),
+    public_url: str = typer.Option(
+        None,
+        "--public-url",
+        help="Public URL when behind a proxy (needed if --host is 0.0.0.0)",
+    ),
+):
+    """Serve the TradingAgents Textual UI in a browser (textual-serve).
+
+    LLM provider and model settings must be set via TRADINGAGENTS_* environment
+    variables; the browser form collects ticker, date, analysts and depth.
+    """
+    from cli.serve import serve_web
+
+    console.print(
+        f"[cyan]Serving TradingAgents at[/cyan] http://{host}:{port}/ "
+        "[dim](set TRADINGAGENTS_LLM_PROVIDER and model env vars first)[/dim]"
+    )
+    serve_web(host=host, port=port, public_url=public_url)
+
+
 @app.command()
 def backtest(
     tickers: str = typer.Argument(..., help="Comma-separated tickers, e.g. NVDA,AAPL"),

@@ -1,36 +1,65 @@
 services:
   tradingagents:
     build: .
+    restart: unless-stopped
     env_file:
       - .env
+    command:
+      - serve
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "8000"
+      - --public-url
+      - "https://ta.ululuu.de"
     volumes:
       - ${TRADINGAGENTS_DATA_DIR:-tradingagents_data}:/home/appuser/.tradingagents
-    tty: true
-    stdin_open: true
+    networks:
+      - proxy
+      - ta-network
+    depends_on:
+      ollama:
+        condition: service_started
+        required: false
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=proxy"
+      # ------------------------------
+      # HTTPS ROUTER
+      # ------------------------------
+      - "traefik.http.routers.ta-secure.entrypoints=websecure"
+      - "traefik.http.routers.ta-secure.rule=Host(`ta.ululuu.de`)"
+      - "traefik.http.routers.ta-secure.tls=true"
+      - "traefik.http.routers.ta-secure.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.ta-secure.service=ta-svc"
+      - "traefik.http.routers.ta-secure.middlewares=default-security-headers@file,gzip@file"
+      # ------------------------------
+      # HTTP ROUTER
+      # ------------------------------
+      - "traefik.http.routers.ta-http.entrypoints=web"
+      - "traefik.http.routers.ta-http.rule=Host(`ta.ululuu.de`)"
+      - "traefik.http.routers.ta-http.service=ta-svc"
+      # ------------------------------
+      # SERVICE DEFINITION
+      # ------------------------------
+      - "traefik.http.services.ta-svc.loadbalancer.server.port=8000"
 
   ollama:
     image: ollama/ollama:latest
+    restart: unless-stopped
     volumes:
       - ollama_data:/root/.ollama
-    profiles:
-      - ollama
-
-  tradingagents-ollama:
-    build: .
-    env_file:
-      - .env
-    environment:
-      - TRADINGAGENTS_LLM_PROVIDER=ollama
-      - OLLAMA_BASE_URL=http://ollama:11434/v1
-    volumes:
-      - ${TRADINGAGENTS_DATA_DIR:-tradingagents_data}:/home/appuser/.tradingagents
-    depends_on:
-      - ollama
-    tty: true
-    stdin_open: true
+    networks:
+      - ta-network
     profiles:
       - ollama
 
 volumes:
   tradingagents_data:
   ollama_data:
+
+networks:
+  ta-network:
+    name: ta-network
+  proxy:
+    external: true
