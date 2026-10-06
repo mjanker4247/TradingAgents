@@ -12,7 +12,7 @@ from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Markdown, Static
 
 from cli.analysis_driver import drive_analysis
-from cli.theme import SHARED_CSS, apply_trading_theme
+from cli.theme import SHARED_CSS, apply_responsive_narrow, apply_trading_theme
 from cli.view_model import (
     current_report_markdown,
     footer_stats,
@@ -22,8 +22,8 @@ from cli.view_model import (
 
 ANALYSIS_CSS = """
 #header {
-    height: 5;
-    padding: 1 2;
+    height: 3;
+    padding: 0 1;
     background: $primary;
     color: $foreground;
     border-bottom: tall $accent;
@@ -35,40 +35,45 @@ ANALYSIS_CSS = """
 
 #upper {
     height: 2fr;
-    margin: 1 0 0 0;
+    margin: 0;
+    layout: horizontal;
 }
 
 .panel-title {
     color: $accent;
     text-style: bold;
     padding: 0 1;
+    height: 1;
     background: $panel;
 }
 
 #progress-panel, #messages-panel {
     background: $surface;
     border: tall $primary 70%;
-    margin: 0 1;
+    margin: 0 1 0 0;
+    height: 1fr;
 }
 
 #progress-panel {
     width: 2fr;
+    margin-left: 1;
 }
 
 #messages-panel {
     width: 3fr;
+    margin-right: 1;
 }
 
 #analysis-panel {
     height: 3fr;
     background: $surface;
     border: tall $success 70%;
-    margin: 1 1;
+    margin: 0 1;
     padding: 0 1;
 }
 
 #stats {
-    height: 3;
+    height: 1;
     content-align: center middle;
     color: $foreground;
     background: $panel;
@@ -93,6 +98,24 @@ DataTable > .datatable--odd-row {
 Markdown {
     background: $surface;
     padding: 0 1;
+}
+
+/* Narrow terminals: stack progress above messages. */
+.narrow #upper {
+    layout: vertical;
+    height: auto;
+    max-height: 40%;
+}
+
+.narrow #progress-panel,
+.narrow #messages-panel {
+    width: 1fr;
+    height: 10;
+    margin: 0 1;
+}
+
+.narrow #analysis-panel {
+    height: 1fr;
 }
 """
 
@@ -157,8 +180,12 @@ class AnalysisScreen(Screen[dict]):
         messages.add_columns("Time", "Type", "Content")
         messages.cursor_type = "none"
 
+        apply_responsive_narrow(self)
         self.set_interval(0.25, self.refresh_panels)
         self.run_worker(self._run_in_thread, exclusive=True, thread=True)
+
+    def on_resize(self, event) -> None:
+        apply_responsive_narrow(self, event.size.width)
 
     def action_dismiss_quit(self) -> None:
         self.dismiss({})

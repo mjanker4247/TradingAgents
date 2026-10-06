@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="{{ config.static.url }}css/xterm.css" />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css?family=Roboto%20Mono"
+    />
+    <script src="{{ config.static.url }}js/textual.js"></script>
+    <style>
+      :root {
+        /* Web type ramp: body ~14px, UI chrome slightly smaller. */
+        --ta-bg: #0f171c;
+        --ta-surface: #162229;
+        --ta-primary: #1f8a70;
+        --ta-primary-hover: #27a884;
+        --ta-fg: #e8eef2;
+        --ta-font: "Roboto Mono", ui-monospace, Menlo, Monaco, monospace;
+        --ta-body: clamp(0.8125rem, 0.35vw + 0.72rem, 0.9375rem);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        background: var(--ta-bg);
+        color: var(--ta-fg);
+        font-family: var(--ta-font);
+        font-size: var(--ta-body);
+        -webkit-text-size-adjust: 100%;
+        text-size-adjust: 100%;
+      }
+
+      .dialog-container {
+        position: absolute;
+        inset: 0;
+        width: 100vw;
+        height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 10;
+        padding: clamp(0.75rem, 2vw, 1.5rem);
+      }
+
+      .shade {
+        position: absolute;
+        inset: 0;
+        background: var(--ta-bg);
+        background-image: url("{{ config.static.url }}images/background.png");
+        background-size: cover;
+        background-position: center;
+      }
+
+      .intro {
+        width: min(40rem, 100%);
+        min-height: clamp(10rem, 28vh, 15rem);
+        padding: clamp(1rem, 2.5vw, 1.5rem);
+        font-size: var(--ta-body);
+        line-height: 1.45;
+        z-index: 20;
+        text-align: center;
+        opacity: 1;
+        color: rgba(255, 255, 255, 0.95);
+        background-color: var(--ta-surface);
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: center;
+        gap: 0.75rem;
+        margin: 0;
+      }
+
+      body.-first-byte .intro-dialog,
+      body.-first-byte .intro-dialog .shade {
+        opacity: 0;
+        transition: opacity 0.3s ease-out;
+        display: none;
+      }
+
+      body .textual-terminal {
+        opacity: 0;
+        transition: opacity 0.3s ease-out;
+        width: 100vw;
+        height: 100vh;
+      }
+
+      body.-first-byte .textual-terminal {
+        opacity: 1;
+        transition: opacity 0.3s ease-out;
+      }
+
+      .intro svg {
+        flex: none;
+        width: clamp(1.25rem, 3vw, 1.75rem);
+        height: auto;
+      }
+
+      body button,
+      body Button {
+        padding: 0.55rem 1.15rem;
+        background-color: var(--ta-primary);
+        color: rgba(255, 255, 255, 0.95);
+        border: none;
+        font-family: var(--ta-font);
+        font-size: var(--ta-body);
+        margin: 0.5rem;
+        display: block;
+        cursor: pointer;
+      }
+
+      body button:hover,
+      Button:hover {
+        background: var(--ta-primary-hover);
+      }
+
+      .closed-dialog {
+        opacity: 0;
+        display: none;
+      }
+
+      body.-closed .closed-dialog {
+        opacity: 1;
+        display: flex;
+      }
+
+      #start {
+        display: none;
+      }
+
+      #start.-delay {
+        display: flex;
+      }
+
+      @media (max-width: 40rem) {
+        .intro {
+          flex-direction: column;
+          min-height: auto;
+        }
+      }
+    </style>
+    <script>
+      function getStartUrl() {
+        const url = new URL(window.location.href);
+        const params = new URLSearchParams(url.search);
+        params.delete("delay");
+        return url.pathname + "?" + params.toString();
+      }
+      async function refresh() {
+        const ping_url = document.body.dataset.pingurl;
+        if (ping_url) {
+          await fetch(ping_url, {
+            method: "GET",
+            mode: "no-cors",
+          });
+        }
+        window.location.href = getStartUrl();
+      }
+
+      /**
+       * Pick an xterm font size that tracks common web body type (12–14px),
+       * not the textual-serve default of 16px which reads oversized on laptops.
+       * Override anytime with ?fontsize=N.
+       */
+      function tradingAgentsFontSize() {
+        const params = new URLSearchParams(window.location.search);
+        const explicit = params.get("fontsize");
+        if (explicit != null && explicit !== "") {
+          const n = parseInt(explicit, 10);
+          if (Number.isFinite(n) && n >= 8 && n <= 28) {
+            return n;
+          }
+        }
+        const w = window.innerWidth || 1280;
+        const h = window.innerHeight || 800;
+        const shortSide = Math.min(w, h);
+        // Phone / narrow → 11–12; tablet → 12–13; desktop → 13–14.
+        if (shortSide < 480) return 11;
+        if (shortSide < 720) return 12;
+        if (w < 1280) return 13;
+        return 14;
+      }
+
+      function applyTradingAgentsFontSize() {
+        const size = String(tradingAgentsFontSize());
+        document.querySelectorAll(".textual-terminal").forEach((el) => {
+          el.dataset.fontSize = size;
+        });
+      }
+    </script>
+  </head>
+  <body data-pingurl="{{ ping_url }}">
+    <div class="dialog-container intro-dialog">
+      <div class="shade"></div>
+      <div class="intro">
+        <svg
+          width="28"
+          viewBox="0 0 2933 2261"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+          aria-hidden="true"
+        >
+          <path
+            fill-rule="evenodd"
+            clip-rule="evenodd"
+            d="M2927.81 0H1677.1L1312.35 205.173H306.689L0.359375 434.921L204.029 893.177H735.972L644.784 2261H1060.36L1441.72 1974.97L2073.92 688.003H2334.4L2717.9 472.286L2927.81 0ZM1245.82 410.347L1276.32 277.656H330.85L153.929 410.347H1245.82ZM1229.16 482.83H100.972L251.134 820.694H813.449L722.26 2188.52H837.043L1229.16 482.83ZM1350.7 277.656L911.417 2188.52H1023.87L1662.19 615.52H2301.36L2451.52 277.656H1350.7ZM1460.19 205.173H2497.79L2733.69 72.4829H1696.09L1460.19 205.173Z"
+            fill="#ffffff"
+          />
+        </svg>
+
+        <div>{{ application.name or 'TradingAgents' }}</div>
+        <button type="button" onClick="refresh()" id="start">Start</button>
+      </div>
+    </div>
+
+    <div class="dialog-container closed-dialog">
+      <div class="shade"></div>
+      <div class="intro">
+        <div class="message">Session ended.</div>
+        <button type="button" onClick="refresh()">Restart</button>
+      </div>
+    </div>
+
+    <div
+      id="terminal"
+      class="textual-terminal"
+      data-session-websocket-url="{{ app_websocket_url }}"
+      data-font-size="{{ font_size }}"
+    ></div>
+    <script>
+      // Runs before window.onload (where textual-serve builds xterm).
+      applyTradingAgentsFontSize();
+    </script>
+  </body>
+</html>

@@ -52,7 +52,7 @@ version = {attr = "tradingagents.__version__"}
 include = ["tradingagents*", "cli*"]
 
 [tool.setuptools.package-data]
-cli = ["static/*"]
+cli = ["static/*", "web_templates/*"]
 tradingagents = ["assets/*.svg"]
 
 [tool.pytest.ini_options]

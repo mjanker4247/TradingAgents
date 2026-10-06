@@ -27,6 +27,13 @@ from textual.widgets import (
     Static,
 )
 
+from cli.finalize import (
+    REVIEW_WARNING,
+    analyst_keys_from_selections,
+    complete_report_markdown,
+    needs_review,
+    save_analysis_reports,
+)
 from cli.models import AnalystType, AssetType
 from cli.prompts import (
     detect_asset_type,
@@ -35,20 +42,25 @@ from cli.prompts import (
     parse_ticker,
 )
 from cli.selections import depth_from_env, unattended_gaps
-from cli.stats_handler import StatsCallbackHandler
-from cli.theme import SHARED_CSS, apply_trading_theme
-from cli.tui import AnalysisScreen
+from cli.jobs import JobStore, start_background_job
+from cli.theme import SHARED_CSS, apply_responsive_narrow, apply_trading_theme
+from cli.web_jobs import JobWatchScreen, JobsScreen
 from tradingagents.default_config import DEFAULT_CONFIG
+from tradingagents.graph.trading_graph import TradingAgentsGraph
 
 
 def _env_ready(flags: dict) -> list[str]:
-    """Gaps that still block a web run (save/show are answered by the web UI)."""
-    web_flags = {**flags, "save": True, "show": False}
-    return [
-        gap
-        for gap in unattended_gaps(web_flags)
-        if not gap.startswith("--save") and not gap.startswith("--show")
-    ]
+    """Env gaps that block Start. Form fields and save/show are handled in the UI."""
+    stub = {
+        **flags,
+        "ticker": flags.get("ticker") or "x",
+        "date": flags.get("date") or "x",
+        "analysts": flags.get("analysts") or "x",
+        # Stub so unattended_gaps does not demand CLI --save/--show; ReportScreen owns save.
+        "save": True,
+        "show": True,
+    }
+    return [gap for gap in unattended_gaps(stub) if not gap.startswith("--")]
 
 
 class SetupScreen(Screen[dict | None]):
@@ -56,10 +68,10 @@ class SetupScreen(Screen[dict | None]):
 
     CSS = """
     #setup {
-        width: 88;
+        width: 72;
         max-width: 100%;
-        margin: 2 2;
-        padding: 1 2;
+        margin: 1 1;
+        padding: 1 1;
         background: $surface;
         border: tall $primary;
     }
@@ -68,16 +80,18 @@ class SetupScreen(Screen[dict | None]):
         color: $success;
         text-style: bold;
         margin-bottom: 0;
+        height: 1;
     }
 
     #subtitle {
         color: $text-muted;
-        margin-bottom: 1;
+        margin-bottom: 0;
+        height: auto;
     }
 
     .row {
         height: auto;
-        margin: 1 0;
+        margin: 0;
         align: left middle;
     }
 
@@ -88,6 +102,17 @@ class SetupScreen(Screen[dict | None]):
 
     Checkbox {
         width: auto;
+    }
+
+    .narrow #setup {
+        width: 100%;
+        margin: 0;
+        border: none;
+    }
+
+    .narrow .row {
+        layout: vertical;
+        height: auto;
     }
     """
 
@@ -138,10 +163,12 @@ class SetupScreen(Screen[dict | None]):
             yield Static(id="env-summary")
             with Horizontal(id="actions", classes="row"):
                 yield Button("Start analysis", variant="success", id="start")
+                yield Button("Back to list", variant="default", id="back")
                 yield Button("Quit", variant="default", id="quit")
         yield Footer()
 
     def on_mount(self) -> None:
+        apply_responsive_narrow(self)
         gaps = _env_ready({"ticker": "x", "date": "x", "analysts": "x"})
         gap_widget = self.query_one("#gaps", Static)
         if gaps:
@@ -170,9 +197,17 @@ class SetupScreen(Screen[dict | None]):
             options = {1, 3, 5}
             select.value = depth if depth in options else 3
 
+    def on_resize(self, event) -> None:
+        apply_responsive_narrow(self, event.size.width)
+
     @on(Button.Pressed, "#quit")
     def quit_pressed(self) -> None:
         self.dismiss(None)
+
+    @on(Button.Pressed, "#back")
+    def back_pressed(self) -> None:
+        # Empty dict signals "return to jobs list" without quitting the app.
+        self.dismiss({})
 
     @on(Button.Pressed, "#start")
     def start_pressed(self) -> None:
@@ -245,14 +280,14 @@ class SetupScreen(Screen[dict | None]):
 
 
 class ReportScreen(Screen[None]):
-    """Show the final decision after a web run."""
+    """Full post-run report: review warning, all sections, optional save + HTML."""
 
     CSS = """
     #report-wrap {
         width: 96;
         max-width: 100%;
-        margin: 2 2;
-        padding: 1 2;
+        margin: 1 1;
+        padding: 1 1;
         background: $surface;
         border: tall $success;
     }
@@ -260,38 +295,151 @@ class ReportScreen(Screen[None]):
     #report-title {
         color: $success;
         text-style: bold;
-        margin-bottom: 1;
+        margin-bottom: 0;
+        height: 1;
     }
 
-    #decision {
+    #review-banner {
+        color: $warning;
+        background: $warning 12%;
+        padding: 0 1;
+        margin: 0 0 1 0;
+        border: tall $warning 40%;
+        height: auto;
+    }
+
+    #report-body {
         background: $panel;
-        padding: 1 1;
+        padding: 0 1;
         border: solid $primary 50%;
         margin-bottom: 1;
+        height: auto;
+        max-height: 70%;
     }
 
-    #back {
-        margin-top: 1;
+    #save-row, #actions {
+        height: auto;
+        margin-top: 0;
+    }
+
+    #save-status {
+        color: $text-muted;
+        height: auto;
+        margin: 0 0 1 0;
+    }
+
+    .narrow #report-wrap {
+        width: 100%;
+        margin: 0;
+        border: none;
     }
     """
 
-    def __init__(self, final_state: dict) -> None:
+    def __init__(
+        self,
+        final_state: dict,
+        graph,
+        ticker: str,
+        *,
+        report_path: str | None = None,
+        html_path: str | None = None,
+    ) -> None:
         super().__init__()
         self.final_state = final_state or {}
+        self.graph = graph
+        self.ticker = ticker
+        self._html_page: Path | None = Path(html_path) if html_path else None
+        self._preset_report = report_path
+        self._preset_html = html_path
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
         with VerticalScroll(id="report-wrap"):
             yield Label("Analysis complete", id="report-title")
-            decision = (
-                self.final_state.get("final_trade_decision") or "_No decision text._"
-            )
-            yield Markdown(
-                f"## Portfolio Manager Decision\n\n{decision}",
-                id="decision",
-            )
-            yield Button("Back to setup", id="back", variant="primary")
+            if needs_review(self.final_state):
+                yield Static(REVIEW_WARNING, id="review-banner")
+            yield Markdown(complete_report_markdown(self.final_state), id="report-body")
+            yield Static("", id="save-status")
+            with Horizontal(id="save-row", classes="row"):
+                yield Checkbox("Save report to disk", value=True, id="do-save")
+                yield Checkbox("Also save HTML page", value=True, id="do-html")
+            with Horizontal(id="actions", classes="row"):
+                yield Button("Save report", variant="success", id="save")
+                yield Button("Download HTML", variant="primary", id="download-html", disabled=True)
+                yield Button("Back to list", variant="default", id="back")
         yield Footer()
+
+    def on_mount(self) -> None:
+        apply_responsive_narrow(self)
+        status = self.query_one("#save-status", Static)
+        download = self.query_one("#download-html", Button)
+        if self._preset_report:
+            lines = [f"[green]Saved on server[/green] {self._preset_report}"]
+            if self._preset_html:
+                lines.append(f"[dim]HTML report:[/dim] {self._preset_html}")
+                download.disabled = False
+                self._html_page = Path(self._preset_html)
+            status.update("\n".join(lines))
+        else:
+            default = self.graph.default_report_path(self.ticker)
+            status.update(f"[dim]Default save path:[/dim] {default}")
+
+    def on_resize(self, event) -> None:
+        apply_responsive_narrow(self, event.size.width)
+
+    @on(Checkbox.Changed, "#do-save")
+    def save_toggled(self, event: Checkbox.Changed) -> None:
+        html_box = self.query_one("#do-html", Checkbox)
+        html_box.disabled = not event.value
+        if not event.value:
+            html_box.value = False
+
+    @on(Button.Pressed, "#save")
+    def save_pressed(self) -> None:
+        if not self.query_one("#do-save", Checkbox).value:
+            self.query_one("#save-status", Static).update(
+                "[yellow]Enable “Save report to disk” first, or use Back to setup.[/yellow]"
+            )
+            return
+        html = self.query_one("#do-html", Checkbox).value
+        result = save_analysis_reports(
+            self.graph,
+            self.final_state,
+            self.ticker,
+            html=html,
+        )
+        status = self.query_one("#save-status", Static)
+        download = self.query_one("#download-html", Button)
+        if not result.ok:
+            status.update(f"[red]Error saving report: {result.error}[/red]")
+            self._html_page = None
+            download.disabled = True
+            return
+        lines = [
+            f"[green]Saved[/green] {result.save_path}",
+            f"[dim]Complete report:[/dim] {result.report_file.name}",
+        ]
+        self._html_page = result.html_page
+        if result.html_page is not None:
+            lines.append(f"[dim]HTML report:[/dim] {result.html_page.name}")
+            download.disabled = False
+        else:
+            download.disabled = True
+        status.update("\n".join(lines))
+
+    @on(Button.Pressed, "#download-html")
+    def download_html(self) -> None:
+        if self._html_page is None or not self._html_page.is_file():
+            self.query_one("#save-status", Static).update(
+                "[yellow]Save the report with HTML enabled first.[/yellow]"
+            )
+            return
+        self.app.deliver_text(
+            self._html_page,
+            save_filename=self._html_page.name,
+            mime_type="text/html",
+            open_method="download",
+        )
 
     @on(Button.Pressed, "#back")
     def back(self) -> None:
@@ -299,7 +447,7 @@ class ReportScreen(Screen[None]):
 
 
 class TradingAgentsWebApp(App[None]):
-    """Entry app served in the browser: setup → analysis → report."""
+    """Browser UI: job list ↔ setup ↔ watch background runs ↔ reports."""
 
     TITLE = "TradingAgents"
     CSS = SHARED_CSS
@@ -309,37 +457,78 @@ class TradingAgentsWebApp(App[None]):
         apply_trading_theme(self)
         self.run_worker(self._session_loop)
 
+    async def _open_job_report(self, job_id: str, store: JobStore) -> None:
+        job = store.get(job_id)
+        final_state = store.read_final_state(job_id)
+        config = store.load_config(job_id) or DEFAULT_CONFIG.copy()
+        selections = store.load_selections(job_id)
+        if job is None or final_state is None or selections is None:
+            self.notify("Finished report is not available yet", severity="error")
+            return
+        graph = TradingAgentsGraph(
+            analyst_keys_from_selections(selections),
+            config=config,
+            debug=False,
+            callbacks=[],
+        )
+        await self.push_screen_wait(
+            ReportScreen(
+                final_state,
+                graph=graph,
+                ticker=job.ticker,
+                report_path=job.report_path,
+                html_path=job.html_path,
+            )
+        )
+
     async def _session_loop(self) -> None:
+        store = JobStore()
         while True:
+            action = await self.push_screen_wait(JobsScreen(store))
+            if action is None or action[0] == "quit":
+                self.exit()
+                return
+
+            kind, job_id = action
+            if kind == "open" and job_id:
+                job = store.get(job_id)
+                if job is None:
+                    self.notify(f"Unknown job {job_id}", severity="error")
+                    continue
+                if job.status == "completed":
+                    await self._open_job_report(job_id, store)
+                    continue
+                # queued / running / failed → watch (failed still shows snapshot/error)
+                opened = await self.push_screen_wait(JobWatchScreen(job_id, store))
+                if opened:
+                    await self._open_job_report(opened, store)
+                continue
+
+            if kind != "new":
+                continue
+
             selections = await self.push_screen_wait(SetupScreen())
             if selections is None:
                 self.exit()
                 return
+            if selections == {}:
+                continue
 
             from cli.run import _build_run_config
 
             config = _build_run_config(selections, checkpoint=None)
-            selected_keys = [a.value for a in selections["analysts"]]
-
-            from tradingagents.graph.trading_graph import TradingAgentsGraph
-
-            stats_handler = StatsCallbackHandler()
-            graph = TradingAgentsGraph(
-                selected_keys,
-                config=config,
-                debug=True,
-                callbacks=[stats_handler],
+            try:
+                record = start_background_job(selections, config)
+            except OSError as exc:
+                self.notify(f"Could not start background job: {exc}", severity="error")
+                continue
+            self.notify(
+                f"Started {record.label} in the background — safe to close the browser.",
+                severity="information",
             )
-
-            final_state = await self.push_screen_wait(
-                AnalysisScreen(
-                    selections=selections,
-                    config=config,
-                    graph=graph,
-                    stats_handler=stats_handler,
-                )
-            )
-            await self.push_screen_wait(ReportScreen(final_state or {}))
+            opened = await self.push_screen_wait(JobWatchScreen(record.job_id, store))
+            if opened:
+                await self._open_job_report(opened, store)
 
 
 def main() -> None:
