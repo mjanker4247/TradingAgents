@@ -207,6 +207,47 @@ def select_research_depth(default=None) -> int:
 
     return choice
 
+def _fetch_ionos_models() -> list[tuple[str, str]]:
+    """Fetch available models from the IONOS Model Hub API."""
+    import requests
+    try:
+        header = {
+            "Authorization": f"Bearer {os.environ.get('IONOS_API_KEY')}", 
+            "Content-Type": "application/json"
+        }
+        resp = requests.get("https://openai.inference.de-txl.ionos.com/v1/models", timeout=10, headers=header)
+        resp.raise_for_status()
+        models = resp.json().get("data", [])
+        return [(m["id"], m["id"]) for m in models]
+    except Exception as e:
+        console.print(f"\n[yellow]Could not fetch IONOS models: {e}[/yellow]")
+        return []
+
+def select_ionos_model() -> str:
+    """Select an IONOS model, or enter a custom ID."""
+    models = _fetch_ionos_models()
+
+    choices = [questionary.Choice(name, value=mid) for name, mid in models]
+    choices.append(questionary.Choice("Custom model ID", value="custom"))
+
+    choice = questionary.select(
+        "Select IONOS Model (latest available):",
+        choices=choices,
+        instruction="\n- Use arrow keys to navigate\n- Press Enter to select",
+        style=questionary.Style([
+            ("selected", "fg:magenta noinherit"),
+            ("highlighted", "fg:magenta noinherit"),
+            ("pointer", "fg:magenta noinherit"),
+        ]),
+    ).ask()
+
+    if choice is None or choice == "custom":
+        return questionary.text(
+            "Enter IONOS model ID (e.g. Qwen/Qwen3-Coder-Next):",
+            validate=lambda x: len(x.strip()) > 0 or "Please enter a model ID.",
+        ).ask().strip()
+
+    return choice
 
 # Mainstream OpenRouter chat-LLM provider namespaces. We surface the newest
 # models from these rather than the universal-newest, which is dominated by
@@ -306,6 +347,9 @@ def _select_model(provider: str, mode: str, default=None) -> str:
     if provider.lower() == "openrouter":
         return select_openrouter_model(mode)
 
+    if provider.lower() == "ionos":
+        return select_ionos_model()
+
     if provider.lower() == "azure":
         return _require_text(
             f"Enter Azure deployment name ({mode}-thinking):",
@@ -378,6 +422,7 @@ def _llm_provider_table() -> list[tuple[str, str, str | None]]:
         ("Azure OpenAI", "azure", None),
         ("Amazon Bedrock", "bedrock", None),
         ("Ollama", "ollama", ollama_url),
+        ("IONOS", "ionos", "https://openai.inference.de-txl.ionos.com/v1"),
         ("OpenAI-compatible (vLLM, LM Studio, llama.cpp, custom relay)", "openai_compatible", None),
     ]
 
