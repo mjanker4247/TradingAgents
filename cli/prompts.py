@@ -229,7 +229,7 @@ def _fetch_ionos_models() -> list[tuple[str, str]]:
     import requests
     try:
         header = {
-            "Authorization": f"Bearer {os.environ.get('IONOS_API_KEY')}", 
+            "Authorization": f"Bearer {os.environ.get('IONOS_API_KEY')}",
             "Content-Type": "application/json"
         }
         resp = requests.get("https://openai.inference.de-txl.ionos.com/v1/models", timeout=10, headers=header)
