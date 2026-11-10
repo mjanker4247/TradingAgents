@@ -1,13 +1,12 @@
 import os
-from typing import Any, Optional
+from typing import Any
 
 from langchain_openai import AzureChatOpenAI
 
 from .base_client import BaseLLMClient, normalize_content
-from .validators import validate_model
 
 _PASSTHROUGH_KWARGS = (
-    "timeout", "max_retries", "api_key", "reasoning_effort",
+    "timeout", "max_retries", "api_key", "reasoning_effort", "temperature", "max_tokens",
     "callbacks", "http_client", "http_async_client",
 )
 
@@ -24,12 +23,13 @@ class AzureOpenAIClient(BaseLLMClient):
 
     Requires environment variables:
         AZURE_OPENAI_API_KEY: API key
-        AZURE_OPENAI_ENDPOINT: Endpoint URL (e.g. https://<resource>.openai.azure.com/)
+        AZURE_OPENAI_ENDPOINT: Endpoint URL (e.g. https://<resource>.openai.azure.com/),
+            unless backend_url gives one
         AZURE_OPENAI_DEPLOYMENT_NAME: Deployment name
         OPENAI_API_VERSION: API version (e.g. 2025-03-01-preview)
     """
 
-    def __init__(self, model: str, base_url: Optional[str] = None, **kwargs):
+    def __init__(self, model: str, base_url: str | None = None, **kwargs):
         super().__init__(model, base_url, **kwargs)
 
     def get_llm(self) -> Any:
@@ -40,6 +40,8 @@ class AzureOpenAIClient(BaseLLMClient):
             "model": self.model,
             "azure_deployment": os.environ.get("AZURE_OPENAI_DEPLOYMENT_NAME", self.model),
         }
+        if self.base_url:   # a configured endpoint, else AZURE_OPENAI_ENDPOINT
+            llm_kwargs["azure_endpoint"] = self.base_url
 
         for key in _PASSTHROUGH_KWARGS:
             if key in self.kwargs:
